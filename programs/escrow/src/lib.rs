@@ -14,29 +14,82 @@ pub mod escrow {
 }
 
 #[derive(Accounts)]
-pub struct Initialize {}
+pub struct CreateEscrow<'info> {
+    #[account(
+        init,
+        payer = buyer,
+        space = 8 + EscrowAccount::INIT_SPACE,
+        seeds = [ESCROW_SEED, buyer.key().as_ref()],
+        bump
+    )]
+    pub escrow: Account<'info, EscrowAccount>,
 
+    #[account(mut)]
+    pub buyer: Signer<'info>,
 
-#[account]
-#[derive(InitSpace)]
-pub struct EscrowAccount {
-    pub buyer: Pubkey,
-    pub seller: Pubkey,
-    pub arbiter: Option<Pubkey>,
-    pub amount: u64,
-    pub expires_at: i64,
-    pub state: EscrowState,
-    pub escrow_id: u64,
-    pub bump: u8,
+    pub system_program: Program<'info, System>,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+#[derive(Accounts)]
+pub struct ReleaseFunds<'info> {
+    #[account(
+        mut,
+        seeds = [ESCROW_SEED, buyer.key().as_ref()],
+        bump = escrow.bump,
+        has_one = buyer @ ErrorCode::Unauthorized,
+        has_one = seller @ ErrorCode::InvalidSeller,
+    )]
+    pub escrow: Account<'info, EscrowAccount>,
+
+    pub buyer: Signer<'info>,
+
+    #[account(mut)]
+    pub seller: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct RefundEscrow<'info> {
+    #[account(
+        mut,
+        seeds = [ESCROW_SEED, buyer.key().as_ref()],
+        bump = escrow.bump,
+        has_one = buyer @ ErrorCode::Unauthorized,
+    )]
+    pub escrow: Account<'info, EscrowAccount>,
+
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+}
+
+#[account]
+#[derive(InitSpace)] // this will automatically know the size of the account data struct for us
+pub struct EscrowAccount {
+    pub buyer: Pubkey,      // 32 bytes
+    pub seller: Pubkey,     // 32 bytes
+    pub amount: u64,        // 8 bytes, because 64/8 = 8
+    pub state: EscrowState, // 1 byte
+    pub bump: u8,           // 1 byte
+}
+
+// the escrow state
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace)]
 pub enum EscrowState {
-    Created,
     Active,
-    Apprived,
     Completed,
-    Cancelled,
-    Refunded,
-    Cancelled,
+    Refund,
+}
+
+// Custom error codes
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Invalid amount: must be greater than 0")]
+    InvalidAmount,
+    #[msg("Invalid state: escrow is not active")]
+    InvalidState,
+    #[msg("Unauthorized: only buyer can perform this action")]
+    Unauthorized,
+    #[msg("Invalid seller: seller address mismatch")]
+    InvalidSeller,
+    #[msg("Insufficient funds in escrow")]
+    InsufficientFunds,
 }
