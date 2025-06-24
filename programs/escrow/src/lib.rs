@@ -7,8 +7,33 @@ declare_id!("75HqDxF2QFqe7gbSyFP6YKCbVReWxAWtxhD4UgZtqkqh");
 pub mod escrow {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        msg!("Greetings from: {:?}", ctx.program_id);
+    pub fn create_escrow(ctx: Context<CreateEscrow>, seller: Pubkey, amount: u64) -> Result<()> {
+        require!(amount > 0, ErrorCode::InvalidAmount);
+
+        let escrow = &mut ctx.accounts.escrow;
+
+        escrow.buyer = ctx.accounts.buyer.key();
+        escrow.seller = seller;
+        escrow.amount = amount;
+        escrow.state = EscrowState::Active;
+        escrow.bump = ctx.bumps.escrow;
+
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                system_program::Transfer {
+                    from: ctx.accounts.buyer.to_account_info(),
+                    to: ctx.accounts.escrow.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
+        msg!(
+            "Escrow created: {} SOL locked for seller {}",
+            amount as f64 / 1_000_000_000.0,
+            seller
+        );
         Ok(())
     }
 }
